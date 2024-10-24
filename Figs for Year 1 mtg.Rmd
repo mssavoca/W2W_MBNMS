@@ -1,0 +1,402 @@
+---
+title: "Figs for W2W Year 1 meeting"
+author: "Matt Savoca"
+date: "2024-10-21"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r cars}
+
+source("Util.R")
+
+
+```
+
+## Summarizing results from the larger size class 
+
+Samples analyzed at Hopkins Marine Station under microscope
+
+First a plot of the summary data
+
+```{r pressure, echo=FALSE}
+# Prep summary data
+
+Opt_micro_beach_cut <- Opt_micro_beach_summ %>% 
+  select(Site_ID, Sample_ID, Volume_Pumped_L, Total_Count:Total_Foams) %>% 
+  mutate(Sample_type = "beach")
+
+Opt_micro_river_cut <- Opt_micro_river_summ %>% 
+  select(Site_ID, Sample_ID, Volume_Pumped_L, Total_Count:Total_Foams) %>% 
+  mutate(Sample_type = "river")
+
+Opt_micro_ocean_cut <- Opt_micro_ocean_summ %>% 
+  select(Site_ID, Sample_ID, Volume_Pumped_L, Total_Count:Total_Foams) %>% 
+  mutate(Sample_type = "ocean")
+
+
+Opt_micro_all_cut <- rbind(Opt_micro_beach_cut, Opt_micro_river_cut, Opt_micro_ocean_cut) %>% 
+  mutate(Site_type = case_when(
+    grepl("SRR|PRR", Sample_ID, ignore.case = TRUE) ~ "agricultural",
+    grepl("CRR|SLR", Sample_ID, ignore.case = TRUE) ~ "urban",
+    TRUE ~ NA_character_  # Use NA_character_ for character NA values
+  ),
+  Volume_Pumped_L = as.numeric(Volume_Pumped_L),
+  Plastics_per_L = Volume_Pumped_L/Total_Count
+  )
+
+
+# Convert the dataframe to long format
+long_data <- Opt_micro_all_cut %>% 
+  select(-Total_Count) %>%  # Remove Total_Count
+  pivot_longer(cols = Total_Fibers:Total_Foams, 
+               names_to = "Plastic_Type", 
+               values_to = "Value") %>%   # Convert to long format
+  mutate(Plastic_Type = case_when(
+    Plastic_Type == "Total_Fibers" ~ "fiber",
+    Plastic_Type == "Total_Fragments" ~ "fragment",
+    Plastic_Type == "Total_Films" ~ "film",
+    Plastic_Type == "Total_Nurdles" ~ "nurdle",
+    Plastic_Type == "Total_Foams" ~ "foam",
+    TRUE ~ Plastic_Type  # This is a catch-all for any other values
+  ),
+    Sample_type = case_when(
+      grepl("Blank", Sample_ID, ignore.case = TRUE) ~ "blank",
+      TRUE ~ Sample_type  # Keep original Sample_type if not a blank
+    )
+  ) %>% 
+    filter(!is.na(Value))  # Remove rows where Value is NA
+
+# First, ensure Sample_type is a factor and set the order
+long_data <- long_data %>%
+  mutate(Sample_type = factor(Sample_type, levels = c("blank", unique(Sample_type[Sample_type != "blank"]))))
+
+# Create a stacked bar plot with the custom palette
+Opt_summ_stacked_bar_plot <- ggplot(long_data, aes(x = Sample_type, y = Value, fill = Plastic_Type)) +
+  geom_bar(stat = "identity", position = "stack") +  # Stacked bars
+  scale_fill_manual(values = custom_palette) +  # Apply custom color palette
+  labs(x = "Sample Type", y = "Plastic Count", fill = "Plastic Type") +
+  theme_classic(base_size = 18) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Display the plot
+Opt_summ_stacked_bar_plot
+
+
+# Calculate proportions
+long_data_prop <- long_data %>%
+  group_by(Sample_type) %>%
+  mutate(Total = sum(Value)) %>%
+  ungroup() %>%
+  mutate(Proportion = Value / Total)
+
+# Create the plot
+Opt_summ_prop_bar_plot <- ggplot(long_data_prop, aes(x = Sample_type, y = Proportion, fill = Plastic_Type)) +
+  geom_bar(stat = "identity", position = "stack") +  # Stacked bars
+  scale_fill_manual(values = custom_palette) +  # Apply custom color palette
+  labs(x = "Sample Type", y = "Proportion of Plastic Types", fill = "Plastic Type") +
+  theme_classic(base_size = 18) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels
+  scale_y_continuous(labels = scales::percent_format())  # Format y-axis as percentages
+
+# Display the plot
+Opt_summ_prop_bar_plot
+
+
+
+Opt_summ_AgvsUrban <- long_data %>%
+  filter(!is.na(Site_type)) %>%  # Remove rows where Site_type is NA
+  ggplot(aes(x = Site_type, y = Value, fill = Plastic_Type)) +
+  geom_bar(stat = "identity", position = "stack") +  # Stacked bars
+  scale_fill_manual(values = custom_palette) +  # Apply custom color palette
+  labs(x = "Site Type", y = "Plastic count in river water", fill = "Plastic Type") +
+  theme_classic(base_size = 18) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+# Display the plot
+Opt_summ_AgvsUrban
+
+
+```
+
+## Summarizing results from the larger size class 
+
+Samples analyzed at Hopkins Marine Station under microscope
+
+Next plots of the particle details from optical microscopy
+
+```{r}
+
+Opt_micro_river_dets_cut <- Opt_micro_river_dets %>% 
+  select(-Site_ID, -Original_ID)
+
+
+Opt_micro_dets_all_cut <- rbind(Opt_micro_river_dets_cut, Opt_micro_ocean_dets, Opt_micro_beach_dets) %>% 
+  mutate(Morphology = case_when(
+    Morphology %in% c("Fiber", "Fiber Clump", "fiber", "fiber clump") ~ "fiber",
+    Morphology %in% c("Fragment", "fragment") ~ "fragment",
+    tolower(Morphology) == "film" ~ "film",
+    Morphology == "Foams" ~ "foam",
+    TRUE ~ as.character(Morphology)  # Keep any other categories as they are
+  ),
+    Color = case_when(
+      Color %in% c("Navy blue", "Blue", "Light Blue", "Navy Blue", "Teal", "blue", "Light blue") ~ "blue",
+      tolower(Color) == "clear" ~ "clear",
+      Color %in% c("Black", "Gray") ~ "black",
+      Color %in% c("Red", "Maroon", "red") ~ "red",
+      Color %in% c("Burgendy", "Tan") ~ "brown",
+      Color %in% c("White", "White/Blue", "Silver", "white") ~ "white",
+      Color %in% c("Green", "Dark Green") ~ "green",
+      TRUE ~ as.character(Color)  # Keep any other colors as they are
+    )
+  )
+  
+
+
+ggplot(Opt_micro_dets_all_cut, aes(x = Approximate_Size_Microns)) +
+  geom_density(aes(color = Morphology, fill = Morphology), alpha = 0.5) +
+  geom_density(color = "black", size = 1) +  # Add this line for the overall distribution
+  geom_rug(aes(color = Morphology), alpha = 0.5) +
+  scale_x_log10() +  # Use log scale for x-axis due to potential large range in sizes
+  scale_fill_manual(values = custom_palette) +  # Apply custom color palette
+  scale_color_manual(values = custom_palette) +  # Apply custom color palette
+  labs(x = "Approximate Size (Microns)", 
+       y = "Density",
+       title = "Distribution of Microplastic Sizes by Morphology") +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "bottom")
+
+
+
+# Create the stacked bar plot
+Bar_color_plot <- ggplot(Opt_micro_dets_all_cut, aes(x = fct_infreq(Color), fill = Color)) +
+  geom_bar(position = "stack", color = "black") +  # Use geom_bar to create a bar plot
+  scale_fill_manual(values = custom_color_palette) +  # Apply the custom color palette
+  labs(x = "Color", y = "Count", fill = "Color") +  # Label the axes
+  theme_classic(base_size = 16)  # Apply a classic theme
+Bar_color_plot
+
+```
+
+Lab blanks plot
+
+```{r}
+
+```
+
+
+
+
+## Summarizing results from the smaller size class 
+
+Samples analyzed at Moore Institute for Plastic Pollution Research
+
+First a plot of the summary data
+```{r}
+
+# Stacked bar plot of count by sample_num, colored by material_class
+
+# First, reorder sample_num based on the total count per sample
+combined_data_part_summ$sample_num <- fct_reorder(combined_data_part_summ$sample_num, combined_data_part_summ$count, .fun = sum, .desc = TRUE)
+
+stacked_bar_material_class_plot <- ggplot(combined_data_part_summ, aes(x = sample_num, y = count, fill = material_simple)) +
+  geom_bar(stat = "identity") +  # 'stat="identity"' is used because we are plotting precomputed counts
+  labs(x = "Sample Number", y = "Count", fill = "Material Class") +  # Label the axes and legend
+  theme_classic(base_size = 14)  # Apply a classic theme
+
+# Display the plot
+stacked_bar_material_class_plot
+
+
+```
+```{r}
+library(dplyr)
+library(knitr)
+
+# Filter for rows where material_simple is 'plastic'
+plastic_data <- combined_data_part_summ[combined_data_part_summ$material_simple == "plastic", ]
+
+# Calculate total plastic count per sample
+plastic_summary_by_sample <- plastic_data %>%
+  group_by(sample_num) %>%
+  summarise(
+    total_plastic_count = sum(count)
+  )
+
+# Calculate overall total plastic count
+total_plastic_overall <- sum(plastic_data$count)
+
+# Add a row for overall total at the bottom
+overall_summary <- data.frame(
+  sample_num = "Overall",
+  total_plastic_count = total_plastic_overall
+)
+
+# Combine the sample summary and the overall summary
+plastic_summary <- bind_rows(plastic_summary_by_sample, overall_summary)
+
+# Print the table using knitr::kable for a nice format
+plastic_summary %>%
+  kable(
+    col.names = c("Sample Number", "Total Plastic Count"),
+    caption = "Summary of Total Plastic Count by Sample",
+    align = "c"
+  )
+
+
+```
+Now plastic deets for the 54-500u range
+
+```{r}
+
+
+# Filter for rows where material_simple is "plastic"
+plastic_data <- combined_data_part_summ %>%
+  filter(material_simple == "plastic")
+
+# Summarize the count of plastic by material_class
+plastic_class_summary <- plastic_data %>%
+  group_by(material_class) %>%
+  summarise(total_plastic_count = sum(count)) %>%
+  arrange(desc(total_plastic_count))  # Arrange by count from high to low
+
+plastic_histogram <- ggplot(plastic_class_summary, aes(x = reorder(material_class, -total_plastic_count), y = total_plastic_count, fill = material_class)) +
+  geom_bar(stat = "identity", color = "black") +
+  labs(x = "Plastic type", y = "Total Count") +
+  theme_classic(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),  # Adjust vjust to move labels closer
+        legend.position = "none")  # Remove the legend
+
+
+
+# Display the plot
+plastic_histogram
+
+ggsave("plastic_histogram.pdf", width = 18, height = 8)
+
+```
+
+
+```{r}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+table_output <- combined_data_part_summ %>%
+  filter(material_simple == "plastic") %>%
+  group_by(material_class) %>%
+  summarize(total_count = sum(count)) %>%
+  ungroup() %>%
+  mutate(proportion = total_count / sum(total_count)) %>%
+  arrange(desc(total_count)) %>%
+  mutate(proportion = scales::percent(proportion, accuracy = 0.1))
+
+# Calculate the total sum
+total_sum <- sum(table_output$total_count)
+total_proportion <- scales::percent(1, accuracy = 0.1)
+
+# Add the total row
+table_output <- bind_rows(
+  table_output,
+  tibble(
+    material_class = "Total",
+    total_count = total_sum,
+    proportion = total_proportion
+  )
+)
+
+# Create a formatted table
+kable(table_output, 
+      col.names = c("Material Class", "Total Count", "Proportion"),
+      align = c("l", "r", "r")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE) %>%
+  row_spec(nrow(table_output), bold = TRUE) %>%
+  add_header_above(c(" " = 1, "Plastic Types" = 2))
+
+
+```
+
+Details on small plastic shape
+
+```{r}
+ggplot(combined_data_part_dets, aes(x = min_length_um, y = max_length_um, color = material_simple)) +
+  geom_point(alpha = 0.5) +  # Set alpha to 0.5 for 50% transparency
+  scale_x_log10() +  # Use log scale for x-axis due to potential large range
+  scale_y_log10() +  # Use log scale for y-axis due to potential large range
+  labs(x = "Minimum Length (µm)", 
+       y = "Maximum Length (µm)", 
+       color = "Material Type",
+       title = "Marticle Max Length vs Min Length") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+
+
+ggplot(combined_data_part_dets, aes(x = area_um2, y = perimeter_um, color = material_simple)) +
+  geom_point(alpha = 0.5) +  # Set alpha to 0.5 for 50% transparency
+  scale_x_log10() +  # Use log scale for x-axis due to potential large range
+  scale_y_log10() +  # Use log scale for y-axis due to potential large range
+  labs(x = "Area (µm^2)", 
+       y = "Perimeter (µm)", 
+       color = "Material Type",
+       title = "Particle area vs perimeter") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+```
+Aspect ratio plot
+```{r}
+
+# Filter the data for only plastic rows
+filtered_data <- combined_data_part_dets %>%
+  filter(material_simple == "plastic")
+
+# Calculate the median aspect_ratio for plastic
+median_aspect_ratio <- median(filtered_data$aspect_ratio, na.rm = TRUE)
+
+# Create the density plot with vertical dashed line at the median
+aspect_ratio_density_plot <- ggplot(filtered_data, aes(x = aspect_ratio, fill = material_simple, color = material_simple)) +
+  geom_density(alpha = 0.4) +  # Add density plot with transparency
+  geom_rug(aes(color = material_simple), sides = "b", size = 0.8) +  # Add a rug plot below
+  geom_vline(aes(xintercept = median_aspect_ratio), linetype = "dashed", color = "black", size = 1) +  # Add dashed vertical line at median
+  xlim(1, 10) +  # Limit the x-axis to 1 to 10
+  labs(x = "Aspect Ratio", y = "Density", title = "Density Plot of Microplastic Aspect Ratio") + 
+  theme_classic(base_size = 14)  # Apply a classic theme
+
+# Display the plot
+aspect_ratio_density_plot
+
+
+
+# Calculate the median aspect_ratio for plastic
+median_circularity <- median(filtered_data$circularity, na.rm = TRUE)
+
+# Create the density plot with vertical dashed line at the median
+circularity_density_plot <- ggplot(filtered_data, aes(x = circularity, fill = material_simple, color = material_simple)) +
+  geom_density(alpha = 0.4) +  # Add density plot with transparency
+  geom_rug(aes(color = material_simple), sides = "b", size = 0.8) +  # Add a rug plot below
+  geom_vline(aes(xintercept = median_circularity), linetype = "dashed", color = "black", size = 1) +  # Add dashed vertical line at median
+  #xlim(1, 10) +  # Limit the x-axis to 1 to 10
+  labs(x = "Circularity", y = "Density", title = "Density Plot of Microplastic Circularity") + 
+  theme_classic(base_size = 14)  # Apply a classic theme
+
+# Display the plot
+circularity_density_plot
+
+```
+
+
+
+
+
+
